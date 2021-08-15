@@ -1,0 +1,32 @@
+apiVersion: apps/v1
+kind: DaemonSet
+metadata:
+  name: nvidia-node-tagger
+  namespace: cluster-addons-nvidia-node-tagger
+  labels:
+    app: nvidia-node-tagger
+spec:
+  selector:
+    matchLabels:
+      name: nvidia-node-tagger
+  template:
+    metadata:
+      labels:
+        name: nvidia-node-tagger
+    spec:
+      serviceAccountName: nvidia-node-tagger
+      tolerations:
+      - key: node-role.kubernetes.io/master
+        operator: Exists
+        effect: NoSchedule
+      containers:
+      - name: nvidia-node-tagger
+        image: koko8624/nvidia-node-tagger:0.0.1
+        imagePullPolicy: Always
+        resources:
+          limits:
+            cpu: 200m 
+            memory: 200Mi
+          requests:
+            cpu: 200m
+            memory: 200Mi

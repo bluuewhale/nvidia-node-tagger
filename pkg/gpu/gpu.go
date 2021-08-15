@@ -1,93 +1,143 @@
 package gpu
 
 import (
-	"bytes"
-	"encoding/csv"
+	"encoding/json"
+	"errors"
 	"fmt"
-	"os/exec"
 
-	"github.com/mitchellh/mapstructure"
+	"github.com/NVIDIA/go-nvml/pkg/nvml"
 )
 
-var (
-	KEYS = []string{
-		"Index", "Name", "DriverVersion", "MemoryTotal", "MemoryUsed", "MemoryFree", "Temperature",
-	}
+const (
+	MiB = 1048576
 )
 
-func NewGpuStatList() (GpuStatList, error) {
+type GpuInfoList struct {
+	Inner     map[string]*GpuInfo `json:"device"`
+	MemorySum Memory              `json:"sum.memory"`
+}
 
-	out, err := exec.Command(
-		"nvidia-smi",
-		"--query-gpu=index,name,driver_version,memory.total,memory.used,memory.free,temperature.gpu",
-		"--format=csv,noheader,nounits",
-	).Output()
+func NewGpuInfoList() (*GpuInfoList, error) {
+	ret := nvml.Init()
+	if ret != nvml.SUCCESS {
+		return nil, errors.New(nvml.ErrorString(ret))
+	}
+	defer nvml.Shutdown()
 
+	count, ret := nvml.DeviceGetCount()
+	if ret != nvml.SUCCESS {
+		return nil, errors.New(nvml.ErrorString(ret))
+	}
+
+	devices := []*nvml.Device{}
+
+	for i := 0; i < count; i++ {
+		device, ret := nvml.DeviceGetHandleByIndex(i)
+		if ret != nvml.SUCCESS {
+			return nil, errors.New(nvml.ErrorString(ret))
+		}
+
+		devices = append(devices, &device)
+	}
+
+	return newGpuInfoList(devices)
+}
+
+func newGpuInfoList(devices []*nvml.Device) (*GpuInfoList, error) {
+	inner := map[string]*GpuInfo{}
+	for i, device := range devices {
+		gpuInfo, err := newGpuInfo(device)
+		if err != nil {
+			return nil, err
+		}
+
+		inner[fmt.Sprint(i)] = gpuInfo
+	}
+
+	gpuInfoList := &GpuInfoList{
+		Inner:     inner,
+		MemorySum: Memory{},
+	}
+
+	for _, gpuInfo := range inner {
+		gpuInfoList.MemorySum.Total += gpuInfo.Memory.Total
+		gpuInfoList.MemorySum.Used += gpuInfo.Memory.Used
+		gpuInfoList.MemorySum.Free += gpuInfo.Memory.Free
+	}
+
+	return gpuInfoList, nil
+}
+
+func flatten(m map[string]interface{}) map[string]interface{} {
+	o := make(map[string]interface{})
+	for k, v := range m {
+		switch child := v.(type) {
+		case map[string]interface{}:
+			nm := flatten(child)
+			for nk, nv := range nm {
+				o[k+"."+nk] = nv
+			}
+		default:
+			o[k] = v
+		}
+	}
+	return o
+}
+
+func (g *GpuInfoList) ToFlatJson(prefix string) (map[string]string, error) {
+	bytes, err := json.Marshal(*g)
 	if err != nil {
-		return GpuStatList{}, err
+		return nil, err
 	}
 
-	csvReader := csv.NewReader(bytes.NewReader(out))
-	csvReader.TrimLeadingSpace = true
-	rows, err := csvReader.ReadAll()
-
-	if err != nil {
-		return GpuStatList{}, err
+	result := make(map[string]interface{})
+	if err := json.Unmarshal(bytes, &result); err != nil {
+		return nil, err
 	}
 
-	fmt.Printf("%v\n", rows)
+	output := make(map[string]string)
+	for k, v := range flatten(result) {
+		output[fmt.Sprintf("%s/%s", prefix, k)] = fmt.Sprintf("%v", v)
+	}
+	return output, nil
+}
 
-	inner := []GpuStat{}
-	for _, row := range rows {
-		gpuStat := newGpuStat(row)
-		inner = append(inner, gpuStat)
+type GpuInfo struct {
+	UUID   string `json:"uuid"`
+	Name   string `json:"name"`
+	Memory Memory `json:"memory"`
+}
+
+func newGpuInfo(device *nvml.Device) (*GpuInfo, error) {
+	uuid, ret := device.GetUUID()
+	if ret != nvml.SUCCESS {
+		return nil, errors.New(nvml.ErrorString(ret))
 	}
 
-	return newGpuStatList(inner), nil
-}
-
-type GpuStatList struct {
-	inner          []GpuStat
-	MemoryTotalSum int `mapstructure:",omitempty"` // MiB
-	MemoryUsedSum  int `mapstructure:",omitempty"` // MiB
-	MemoryFreeSum  int `mapstructure:",omitempty"` // MiB
-}
-
-func newGpuStatList(inner []GpuStat) GpuStatList {
-	gpuStatList := GpuStatList{}
-	gpuStatList.inner = inner
-
-	for _, gpuStat := range inner {
-		gpuStatList.MemoryTotalSum += gpuStat.MemoryTotal
-		gpuStatList.MemoryUsedSum += gpuStat.MemoryUsed
-		gpuStatList.MemoryFreeSum += gpuStat.MemoryFree
+	name, ret := device.GetName()
+	if ret != nvml.SUCCESS {
+		return nil, errors.New(nvml.ErrorString(ret))
 	}
 
-	return gpuStatList
-}
-
-func (g *GpuStatList) Iterate() []GpuStat {
-	return g.inner
-}
-
-type GpuStat struct {
-	Index         int     `mapstructure:",omitempty"`
-	Name          string  `mapstructure:",omitempty"`
-	DriverVersion string  `mapstructure:",omitempty"`
-	MemoryTotal   int     `mapstructure:",omitempty"` // MiB
-	MemoryUsed    int     `mapstructure:",omitempty"` // MiB
-	MemoryFree    int     `mapstructure:",omitempty"` // MiB
-	Temperature   float32 `mapstructure:",omitempty"`
-}
-
-func newGpuStat(data []string) GpuStat {
-	gpuStat := GpuStat{}
-	_map := map[string]string{}
-
-	for i, v := range data {
-		_map[KEYS[i]] = v
+	memory, ret := device.GetMemoryInfo()
+	if ret != nvml.SUCCESS {
+		return nil, errors.New(nvml.ErrorString(ret))
 	}
 
-	mapstructure.WeakDecode(_map, &gpuStat)
-	return gpuStat
+	gpuInfo := &GpuInfo{
+		UUID: uuid,
+		Name: name,
+		Memory: Memory{
+			Total: memory.Total / MiB,
+			Used:  memory.Used / MiB,
+			Free:  memory.Free / MiB,
+		},
+	}
+	return gpuInfo, nil
+}
+
+type Memory struct {
+	Total uint64 `json:"total"` // MiB
+	Used  uint64 `json:"used"`  // MiB
+	Free  uint64 `json:"free"`  // MiB
 }

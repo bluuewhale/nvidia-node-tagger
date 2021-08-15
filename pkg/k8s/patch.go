@@ -11,12 +11,12 @@ import (
 )
 
 type Patch struct {
-	Op    string                 `json:"op"`
-	Path  string                 `json:"path"`
-	Value map[string]interface{} `json:"value"`
+	Op    string            `json:"op"`
+	Path  string            `json:"path"`
+	Value map[string]string `json:"value"`
 }
 
-func NewPatch(op, path string, value map[string]interface{}) Patch {
+func NewPatch(op, path string, value map[string]string) Patch {
 	return Patch{
 		Op:    op,
 		Path:  path,
@@ -24,17 +24,17 @@ func NewPatch(op, path string, value map[string]interface{}) Patch {
 	}
 }
 
-func NewPatchAddLabels(value map[string]interface{}) Patch {
+func NewPatchAddAnnotations(value map[string]string) Patch {
 	return Patch{
 		Op:    "add",
-		Path:  "/metadata/label/",
+		Path:  "/metadata/annotations",
 		Value: value,
 	}
 }
-func NewPatchReplaceLabels(value map[string]interface{}) Patch {
+func NewPatchReplaceAnnotations(value map[string]string) Patch {
 	return Patch{
 		Op:    "replace",
-		Path:  "/metadata/labels/",
+		Path:  "/metadata/annotations",
 		Value: value,
 	}
 }
@@ -50,7 +50,7 @@ type NodePatchCommand struct {
 }
 
 func (p *NodePatchCommand) Execute() (*v1.Node, error) {
-	data, err := json.Marshal(p.Patch)
+	data, err := json.Marshal([]Patch{p.Patch})
 	if err != nil {
 		return nil, err
 	}

@@ -1,7 +1,6 @@
 package gpu
 
 import (
-	"encoding/json"
 	"errors"
 	"fmt"
 
@@ -66,40 +65,6 @@ func newGpuInfoList(devices []*nvml.Device) (*GpuInfoList, error) {
 	}
 
 	return gpuInfoList, nil
-}
-
-func flatten(m map[string]interface{}) map[string]interface{} {
-	o := make(map[string]interface{})
-	for k, v := range m {
-		switch child := v.(type) {
-		case map[string]interface{}:
-			nm := flatten(child)
-			for nk, nv := range nm {
-				o[k+"."+nk] = nv
-			}
-		default:
-			o[k] = v
-		}
-	}
-	return o
-}
-
-func (g *GpuInfoList) ToFlatJson(prefix string) (map[string]string, error) {
-	bytes, err := json.Marshal(*g)
-	if err != nil {
-		return nil, err
-	}
-
-	result := make(map[string]interface{})
-	if err := json.Unmarshal(bytes, &result); err != nil {
-		return nil, err
-	}
-
-	output := make(map[string]string)
-	for k, v := range flatten(result) {
-		output[fmt.Sprintf("%s/%s", prefix, k)] = fmt.Sprintf("%v", v)
-	}
-	return output, nil
 }
 
 type GpuInfo struct {

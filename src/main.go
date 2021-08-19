@@ -7,12 +7,13 @@ import (
 
 	"github.com/BlueWhaleKo/nvidia-node-tagger/pkg/gpu"
 	"github.com/BlueWhaleKo/nvidia-node-tagger/pkg/k8s"
+	tagger "github.com/BlueWhaleKo/nvidia-node-tagger/pkg/nvidia_node_tagger"
 	"github.com/sirupsen/logrus"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
 // ==================================
-// ===== Command-line arguments =====
+// ===== Request-line arguments =====
 // ==================================
 var (
 	argKubecfgFile       = flag.String("kubecfg-file", "", `Location of kubecfg file for access to kubernetes master service; --kube_master_url overrides the URL part of this; if neither this nor --kube_master_url are provided, defaults to ServiceAccount tokens`)
@@ -53,21 +54,17 @@ func main() {
 		logrus.Fatal(err)
 	}
 
-	gpuJson, err := gpuInfoList.ToFlatJson(*argAnnotationsPrefix)
-	if err != nil {
-		logrus.Fatal(err)
-	}
+	// create annotation patch
+	pm := tagger.NewPatchFactory(*argAnnotationsPrefix)
+	patchAnnotation := pm.Patch("add", "/metadata/annotations", gpuInfoList)
 
-	// create patch
-	patch := k8s.NewPatchAddAnnotations(gpuJson)
-
-	command := k8s.NodePatchCommand{
+	rq := tagger.NodePatchRequest{
 		NodeName:  nodeName,
 		Clientset: clientset,
-		Patch:     patch,
+		Patch:     patchAnnotation,
 	}
 
-	_, err = command.Execute()
+	_, err = rq.Send()
 	if err != nil {
 		logrus.Fatal(err)
 	}

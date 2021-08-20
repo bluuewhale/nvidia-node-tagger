@@ -18,8 +18,11 @@ func NewPatchFactory(prefix string) *PatchFactory {
 	}
 }
 
-func (pf *PatchFactory) Patch(op, path string, value interface{}) *Patch {
-	json := FlattenMap(value)
+func (pf *PatchFactory) Patch(op, path string, value interface{}) (*Patch, error) {
+	json, err := FlattenMap(value)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create Patch. %s", err)
+	}
 
 	o := make(map[string]interface{})
 	for k, v := range json {
@@ -35,5 +38,5 @@ func (pf *PatchFactory) Patch(op, path string, value interface{}) *Patch {
 		Op:    op,
 		Path:  path,
 		Value: o,
-	}
+	}, nil
 }

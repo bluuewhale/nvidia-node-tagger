@@ -1,13 +1,23 @@
 package nvidia_node_tagger
 
 import (
+	"encoding/json"
 	"fmt"
-
-	"github.com/fatih/structs"
 )
 
-func Map(s interface{}) map[string]interface{} {
-	return structs.Map(s)
+func Map(s interface{}) (map[string]interface{}, error) {
+
+	bytes, err := json.Marshal(s)
+	if err != nil {
+		return nil, err
+	}
+
+	result := make(map[string]interface{})
+	if err := json.Unmarshal(bytes, &result); err != nil {
+		return nil, err
+	}
+
+	return result, nil
 }
 
 // Flatten transform nested map into a flat map
@@ -28,8 +38,12 @@ func Flatten(m map[string]interface{}) map[string]interface{} {
 }
 
 // FlattenMap transform an interface into a flat map
-func FlattenMap(s interface{}) map[string]interface{} {
-	m := Map(s)
+func FlattenMap(s interface{}) (map[string]interface{}, error) {
+	m, err := Map(s)
+	if err != nil {
+		return nil, err
+	}
+
 	o := make(map[string]interface{})
 	for k, v := range m {
 		switch child := v.(type) {
@@ -42,7 +56,7 @@ func FlattenMap(s interface{}) map[string]interface{} {
 			o[k] = v
 		}
 	}
-	return o
+	return o, nil
 }
 
 // AddPrefix to keys in a map

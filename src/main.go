@@ -28,19 +28,6 @@ var (
 func main() {
 	flag.Parse()
 
-	// parse gpu informations
-	gpuInfoList, err := gpu.NewGpuDeviceList()
-	if err != nil {
-		logrus.Fatal(err)
-	}
-
-	// create annotation patch
-	pm := tagger.NewPatchFactory(*argAnnotationsPrefix)
-	patchAnnotation, err := pm.Patch("add", "/metadata/annotations", gpuInfoList)
-	if err != nil {
-		logrus.Fatal(err)
-	}
-
 	// create k8s client
 	kubecfg, err := k8s.NewKubeConfig(*argKubeMasterURL, *argKubecfgFile)
 	if err != nil {
@@ -71,6 +58,29 @@ func main() {
 
 	logrus.Infof("NodeName: %s\n", nodeName)
 
+	// parse gpu informations
+	gpuDeviceList, err := gpu.NewGpuDeviceList()
+	if err != nil {
+		logrus.Fatal(err)
+	}
+
+	gpuDeviceMap, err := tagger.FlattenMap(gpuDeviceList)
+	if err != nil {
+		logrus.Fatal(err)
+	}
+
+	// create annotation patch
+	patchAnnotation, err := tagger.NewPatchBuilder().
+		WithOperation("add").
+		WithPath("/metadata/annotations").
+		WithValue(gpuDeviceMap).
+		WithPrefix(*argAnnotationsPrefix).
+		Build()
+
+	if err != nil {
+		logrus.Fatal(err)
+	}
+
 	rq := tagger.NodePatchRequest{
 		NodeName:  nodeName,
 		Clientset: clientset,
@@ -81,4 +91,5 @@ func main() {
 	if err != nil {
 		logrus.Fatal(err)
 	}
+
 }

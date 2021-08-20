@@ -3,7 +3,6 @@ package nvidia_node_tagger
 import (
 	"context"
 	"encoding/json"
-	"fmt"
 
 	"github.com/sirupsen/logrus"
 	v1 "k8s.io/api/core/v1"
@@ -22,21 +21,20 @@ type NodePatchRequest struct {
 	Patch     *Patch
 }
 
-func (p *NodePatchRequest) Send() (*v1.Node, error) {
+func (r *NodePatchRequest) Send() (*v1.Node, error) {
 
-	for k, v := range p.Patch.Value {
-		v = fmt.Sprintf("%v", v)
-		p.Patch.Value[k] = v
-		logrus.Infof("%s: %v", k, v)
+	logrus.Infof("Sending %s %s patch to %s", r.Patch.Op, r.Patch.Path, r.NodeName)
+	for k, v := range r.Patch.Value {
+		logrus.Infof(" ㄴ %s: %s", k, v)
 	}
 
-	data, err := json.Marshal([]Patch{*p.Patch})
+	data, err := json.Marshal([]Patch{*r.Patch})
 	if err != nil {
 		return nil, err
 	}
 
-	return p.Clientset.
+	return r.Clientset.
 		CoreV1().
 		Nodes().
-		Patch(context.TODO(), p.NodeName, types.JSONPatchType, data, metav1.PatchOptions{})
+		Patch(context.TODO(), r.NodeName, types.JSONPatchType, data, metav1.PatchOptions{})
 }

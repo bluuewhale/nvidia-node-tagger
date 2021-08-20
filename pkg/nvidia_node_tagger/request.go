@@ -22,12 +22,7 @@ type NodePatchRequest struct {
 }
 
 func (r *NodePatchRequest) Send() (*v1.Node, error) {
-
 	logrus.Infof("Sending %s %s patch to %s", r.Patch.Op, r.Patch.Path, r.NodeName)
-	for k, v := range r.Patch.Value {
-		logrus.Infof(" ㄴ %s: %s", k, v)
-	}
-
 	data, err := json.Marshal([]Patch{*r.Patch})
 	if err != nil {
 		return nil, err
@@ -36,5 +31,5 @@ func (r *NodePatchRequest) Send() (*v1.Node, error) {
 	return r.Clientset.
 		CoreV1().
 		Nodes().
-		Patch(context.TODO(), r.NodeName, types.JSONPatchType, data, metav1.PatchOptions{})
+		Patch(context.TODO(), r.NodeName, types.JSONPatchType, data, metav1.PatchOptions{}, r.Patch.SubResources...)
 }

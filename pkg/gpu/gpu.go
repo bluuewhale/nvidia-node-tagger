@@ -11,12 +11,12 @@ const (
 	MiB = 1048576
 )
 
-type GpuDeviceList struct {
-	Devices   map[string]*GpuDevice `json:"devices"`
-	MemorySum Memory                `json:"sum.memory"`
+type GpuDeviceInfos struct {
+	Devices   map[string]*GpuDeviceInfo `json:"devices"`
+	MemorySum Memory                    `json:"memory"`
 }
 
-func NewGpuDeviceList() (*GpuDeviceList, error) {
+func NewGpuDeviceInfos() (*GpuDeviceInfos, error) {
 	ret := nvml.Init()
 	if ret != nvml.SUCCESS {
 		return nil, errors.New(nvml.ErrorString(ret))
@@ -39,41 +39,37 @@ func NewGpuDeviceList() (*GpuDeviceList, error) {
 		devices = append(devices, &device)
 	}
 
-	return newGpuDeviceList(devices)
-}
-
-func newGpuDeviceList(devices []*nvml.Device) (*GpuDeviceList, error) {
-	deviceList := map[string]*GpuDevice{}
+	deviceInfos := map[string]*GpuDeviceInfo{}
 	for i, device := range devices {
-		gpuDevice, err := newGpuDevice(device)
+		gpuDevice, err := newGpuDeviceInfo(device)
 		if err != nil {
 			return nil, err
 		}
 
-		deviceList[fmt.Sprint(i)] = gpuDevice
+		deviceInfos[fmt.Sprint(i)] = gpuDevice
 	}
 
-	gpuDeviceList := &GpuDeviceList{
-		Devices:   deviceList,
+	gpuDeviceInfos := &GpuDeviceInfos{
+		Devices:   deviceInfos,
 		MemorySum: Memory{},
 	}
 
-	for _, gpuDevice := range deviceList {
-		gpuDeviceList.MemorySum.Total += gpuDevice.Memory.Total
-		gpuDeviceList.MemorySum.Used += gpuDevice.Memory.Used
-		gpuDeviceList.MemorySum.Free += gpuDevice.Memory.Free
+	for _, gpuDevice := range deviceInfos {
+		gpuDeviceInfos.MemorySum.Total += gpuDevice.Memory.Total
+		gpuDeviceInfos.MemorySum.Used += gpuDevice.Memory.Used
+		gpuDeviceInfos.MemorySum.Free += gpuDevice.Memory.Free
 	}
 
-	return gpuDeviceList, nil
+	return gpuDeviceInfos, nil
 }
 
-type GpuDevice struct {
+type GpuDeviceInfo struct {
 	UUID   string `json:"uuid"`
 	Name   string `json:"name"`
 	Memory Memory `json:"memory"`
 }
 
-func newGpuDevice(device *nvml.Device) (*GpuDevice, error) {
+func newGpuDeviceInfo(device *nvml.Device) (*GpuDeviceInfo, error) {
 	uuid, ret := device.GetUUID()
 	if ret != nvml.SUCCESS {
 		return nil, errors.New(nvml.ErrorString(ret))
@@ -89,7 +85,7 @@ func newGpuDevice(device *nvml.Device) (*GpuDevice, error) {
 		return nil, errors.New(nvml.ErrorString(ret))
 	}
 
-	gpuDevice := &GpuDevice{
+	gpuDevice := &GpuDeviceInfo{
 		UUID: uuid,
 		Name: name,
 		Memory: Memory{
@@ -105,4 +101,46 @@ type Memory struct {
 	Total uint64 `json:"total"` // MiB
 	Used  uint64 `json:"used"`  // MiB
 	Free  uint64 `json:"free"`  // MiB
+}
+
+// ==============================================================
+
+type GpuVramCapacity struct {
+	Devices map[string]uint64 `json:"vram.devices"`
+	Sum     uint64            `json:"vram"`
+}
+
+func NewGpuVramCapacity() (*GpuVramCapacity, error) {
+	ret := nvml.Init()
+	if ret != nvml.SUCCESS {
+		return nil, errors.New(nvml.ErrorString(ret))
+	}
+	defer nvml.Shutdown()
+
+	count, ret := nvml.DeviceGetCount()
+	if ret != nvml.SUCCESS {
+		return nil, errors.New(nvml.ErrorString(ret))
+	}
+
+	gpuVramCapacity := &GpuVramCapacity{
+		Devices: make(map[string]uint64),
+		Sum:     0,
+	}
+
+	for i := 0; i < count; i++ {
+		device, ret := nvml.DeviceGetHandleByIndex(i)
+		if ret != nvml.SUCCESS {
+			return nil, errors.New(nvml.ErrorString(ret))
+		}
+
+		memory, ret := device.GetMemoryInfo()
+		if ret != nvml.SUCCESS {
+			return nil, errors.New(nvml.ErrorString(ret))
+		}
+
+		gpuVramCapacity.Devices[fmt.Sprint(i)] = memory.Total / MiB
+		gpuVramCapacity.Sum += memory.Total / MiB
+	}
+
+	return gpuVramCapacity, nil
 }
